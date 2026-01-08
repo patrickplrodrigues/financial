@@ -1,15 +1,15 @@
 import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { getSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { FinanceTracker } from "@/components/finance-tracker"
 import { UserMenu } from "@/components/user-menu"
 
 export default async function Home() {
-  const session = await getServerSession(authOptions)
+  const session = await getSession()
 
-  if (!session?.user) {
-    redirect("/login")
-  }
+if (!session) {
+  redirect("/login")
+}
 
   return (
     <main className="min-h-screen bg-background">
