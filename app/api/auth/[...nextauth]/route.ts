@@ -11,7 +11,7 @@ const isCodespaces = process.env.CODESPACES === "true"
 
 export const authOptions: NextAuthOptions = {
   providers: isCodespaces
-    ? [] // ⛔️ desativa OAuth no Codespaces
+    ? []
     : [
         GoogleProvider({
           clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -22,24 +22,30 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user }) {
       if (isCodespaces) return true
-      if (!user?.email) return false
-      return allowedEmails.includes(user.email.toLowerCase())
+      return !!user?.email
     },
 
     async session({ session }) {
+      if (!session.user?.email) {
+        session.user.isAuthorized = false
+        return session
+      }
+
+      session.user.isAuthorized =
+        isCodespaces ||
+        allowedEmails.includes(session.user.email.toLowerCase())
+
       return session
     },
   },
 
   pages: {
     signIn: "/login",
-    error: "/login",
+    error: "/unauthorized",
   },
 
   secret: process.env.NEXTAUTH_SECRET,
-  debug: true,
 }
 
 const handler = NextAuth(authOptions)
-
 export { handler as GET, handler as POST }

@@ -1,15 +1,9 @@
-import { getServerSession } from "next-auth"
-import { getSession } from "@/lib/auth"
-import { redirect } from "next/navigation"
+import { requireAuth } from "@/lib/require-auth"
 import { FinanceTracker } from "@/components/finance-tracker"
 import { UserMenu } from "@/components/user-menu"
 
 export default async function Home() {
-  const session = await getSession()
-
-if (!session) {
-  redirect("/login")
-}
+  const session = await requireAuth()
 
   return (
     <main className="min-h-screen bg-background">
