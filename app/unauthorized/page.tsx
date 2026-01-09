@@ -1,4 +1,6 @@
-import Link from "next/link"
+"use client"
+
+import { signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -23,19 +25,26 @@ export default function UnauthorizedPage() {
 
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Se achares que isto é um erro, entra em contacto com o administrador
-            ou tenta iniciar sessão com outra conta Google.
+            Podes tentar iniciar sessão com outra conta Google ou contactar
+            o administrador se acreditares que isto é um erro.
           </p>
 
           <div className="flex flex-col gap-2">
-            <Button asChild>
-              <Link href="/api/auth/signin">
-                Entrar com outra conta
-              </Link>
+            <Button
+              onClick={() =>
+                signOut({ callbackUrl: "/login" })
+              }
+            >
+              Entrar com outra conta
             </Button>
 
-            <Button variant="ghost" asChild>
-              <Link href="/login">Voltar ao login</Link>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                signOut({ callbackUrl: "/login" })
+              }
+            >
+              Voltar ao login
             </Button>
           </div>
         </CardContent>
