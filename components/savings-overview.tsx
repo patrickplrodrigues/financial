@@ -1,256 +1,251 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { supabase } from "@/lib/supabase"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Trash2, PiggyBank, TrendingUp, TrendingDown, Banknote } from "lucide-react"
-import { type SavingsExtraEntry, MONTHS } from "@/lib/finance-types"
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-PT", {
+import { PiggyBank, TrendingUp, TrendingDown, Banknote } from "lucide-react"
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("pt-PT", {
     style: "currency",
     currency: "EUR",
   }).format(value)
-}
 
 export function SavingsOverview() {
-  const [initialSavings, setInitialSavings] = useState(15415.68)
-  const [motherLoan, setMotherLoan] = useState(700)
-  const [monthlySavings, setMonthlySavings] = useState<number[]>(() => {
-    const savings = new Array(12).fill(0)
-    savings[0] = 782.08
-    return savings
-  })
+  const { data: session } = useSession()
 
-  const [extraEntries, setExtraEntries] = useState<SavingsExtraEntry[]>([
-    { id: "1", description: "Pirata", amount: 70, type: "saida" },
-    { id: "2", description: "Marquise", amount: 500, type: "saida" },
-  ])
+  const [coupleId, setCoupleId] = useState<string | null>(null)
+  const [assets, setAssets] = useState<any[]>([])
+  const [liabilities, setLiabilities] = useState<any[]>([])
 
-  const totalMonthlySavings = monthlySavings.reduce((sum, value) => sum + value, 0)
-  const totalEntradas = extraEntries.filter((e) => e.type === "entrada").reduce((sum, e) => sum + e.amount, 0)
-  const totalSaidas = extraEntries.filter((e) => e.type === "saida").reduce((sum, e) => sum + e.amount, 0)
+  // ======================================================
+  // 👫 OBTER COUPLE ID
+  // ======================================================
 
-  const totalSavings = initialSavings + totalMonthlySavings + totalEntradas - totalSaidas
-  const totalWithMother = totalSavings + motherLoan
+  useEffect(() => {
+    if (!session?.user?.email) return
 
-  const addExtraEntry = () => {
-    const newEntry: SavingsExtraEntry = {
-      id: Date.now().toString(),
-      description: "",
-      amount: 0,
-      type: "saida",
+    const loadCouple = async () => {
+      const { data } = await supabase
+        .from("couples")
+        .select("id")
+        .or(`email1.eq.${session.user.email},email2.eq.${session.user.email}`)
+        .single()
+
+      if (data) setCoupleId(data.id)
     }
-    setExtraEntries([...extraEntries, newEntry])
+
+    loadCouple()
+  }, [session])
+
+  // ======================================================
+  // 🔥 BUSCAR ATIVOS E DÍVIDAS
+  // ======================================================
+
+  useEffect(() => {
+    if (!coupleId) return
+
+    const fetchData = async () => {
+      const { data } = await supabase
+        .from("assets_liabilities")
+        .select("*")
+        .eq("couple_id", coupleId)
+
+      if (!data) return
+
+      setAssets(data.filter((a) => a.type === "asset"))
+      setLiabilities(data.filter((l) => l.type === "liability"))
+    }
+
+    fetchData()
+  }, [coupleId])
+
+  // ======================================================
+  // ➕ ADICIONAR ITEM
+  // ======================================================
+
+  const addItem = async (type: "asset" | "liability") => {
+    if (!coupleId) return
+
+    const { data } = await supabase
+      .from("assets_liabilities")
+      .insert({
+        couple_id: coupleId,
+        name: "",
+        amount: 0,
+        type,
+      })
+      .select()
+      .single()
+
+    if (!data) return
+
+    type === "asset"
+      ? setAssets([...assets, data])
+      : setLiabilities([...liabilities, data])
   }
 
-  const updateExtraEntry = (id: string, field: keyof SavingsExtraEntry, value: string | number) => {
-    setExtraEntries((entries) => entries.map((item) => (item.id === id ? { ...item, [field]: value } : item)))
+  // ======================================================
+  // ✏️ UPDATE
+  // ======================================================
+
+  const updateItem = async (id: string, field: string, value: any) => {
+    await supabase
+      .from("assets_liabilities")
+      .update({ [field]: value })
+      .eq("id", id)
+
+    setAssets((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a))
+    )
+
+    setLiabilities((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, [field]: value } : l))
+    )
   }
 
-  const removeExtraEntry = (id: string) => {
-    setExtraEntries((entries) => entries.filter((item) => item.id !== id))
+  // ======================================================
+  // 🗑️ DELETE
+  // ======================================================
+
+  const removeItem = async (id: string) => {
+    await supabase.from("assets_liabilities").delete().eq("id", id)
+
+    setAssets((prev) => prev.filter((a) => a.id !== id))
+    setLiabilities((prev) => prev.filter((l) => l.id !== id))
   }
 
-  const updateMonthlySaving = (index: number, value: number) => {
-    setMonthlySavings((prev) => prev.map((v, i) => (i === index ? value : v)))
-  }
+  // ======================================================
+  // 📊 CÁLCULOS
+  // ======================================================
+
+  const totalAssets = assets.reduce((sum, a) => sum + Number(a.amount), 0)
+  const totalLiabilities = liabilities.reduce(
+    (sum, l) => sum + Number(l.amount),
+    0
+  )
+
+  const netWorth = totalAssets - totalLiabilities
+
+  // ======================================================
+  // UI
+  // ======================================================
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Poupança</h2>
-          <p className="text-muted-foreground">Visão geral da poupança anual</p>
-        </div>
-      </div>
+      <h2 className="text-2xl font-bold">Património do Casal</h2>
 
-      {/* Summary Cards */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-primary/10 border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-primary/20">
-                <PiggyBank className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Poupança Inicial</p>
-                <p className="text-lg font-bold text-primary">{formatCurrency(initialSavings)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* ATIVOS */}
+      <Card>
+        <CardHeader className="flex justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="text-accent" /> Ativos
+          </CardTitle>
 
-        <Card className="bg-accent/10 border-accent/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-accent/20">
-                <TrendingUp className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Entradas</p>
-                <p className="text-lg font-bold text-accent">{formatCurrency(totalEntradas)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <Button size="sm" onClick={() => addItem("asset")}>
+            Adicionar
+          </Button>
+        </CardHeader>
 
-        <Card className="bg-destructive/10 border-destructive/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-destructive/20">
-                <TrendingDown className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Saídas</p>
-                <p className="text-lg font-bold text-destructive">{formatCurrency(totalSaidas)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <CardContent className="space-y-3">
+          {assets.map((item) => (
+            <div key={item.id} className="flex gap-2">
+              <Input
+                value={item.name || ""}
+                placeholder="Descrição"
+                onChange={(e) =>
+                  updateItem(item.id, "name", e.target.value)
+                }
+              />
 
-        <Card className="bg-chart-3/10 border-chart-3/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-chart-3/20">
-                <Banknote className="h-5 w-5 text-chart-3" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Empréstimo Mãe</p>
-                <p className="text-lg font-bold text-chart-3">{formatCurrency(motherLoan)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              <Input
+                type="number"
+                value={item.amount || ""}
+                onChange={(e) =>
+                  updateItem(item.id, "amount", Number(e.target.value))
+                }
+                className="w-32"
+              />
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Monthly Savings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <PiggyBank className="h-5 w-5 text-primary" />
-              Poupança Mensal
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {MONTHS.map((month, index) => (
-                <div key={index} className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">{month}</Label>
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    value={monthlySavings[index] || ""}
-                    onChange={(e) => updateMonthlySaving(index, Number.parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-4 border-t flex justify-between items-center">
-              <span className="font-medium">Total Mensal</span>
-              <span className="font-bold text-primary">{formatCurrency(totalMonthlySavings)}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Extra Entries */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Entradas/Saídas Extra</CardTitle>
-              <Button size="sm" variant="outline" onClick={addExtraEntry}>
-                <Plus className="h-4 w-4 mr-1" />
-                Adicionar
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => removeItem(item.id)}
+              >
+                ✕
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {extraEntries.map((item) => (
-              <div key={item.id} className="flex items-center gap-2">
-                <Select
-                  value={item.type}
-                  onValueChange={(v) => updateExtraEntry(item.id, "type", v as "entrada" | "saida")}
-                >
-                  <SelectTrigger className="w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="entrada">Entrada</SelectItem>
-                    <SelectItem value="saida">Saída</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  placeholder="Descrição"
-                  value={item.description}
-                  onChange={(e) => updateExtraEntry(item.id, "description", e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={item.amount || ""}
-                  onChange={(e) => updateExtraEntry(item.id, "amount", Number.parseFloat(e.target.value) || 0)}
-                  className="w-24"
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => removeExtraEntry(item.id)}
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-            {extraEntries.length === 0 && <p className="text-center text-muted-foreground py-4">Sem entradas extra</p>}
-          </CardContent>
-        </Card>
-      </div>
+          ))}
 
-      {/* Initial Values */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Valores Iniciais</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Poupança Inicial</Label>
-              <Input
-                type="number"
-                value={initialSavings || ""}
-                onChange={(e) => setInitialSavings(Number.parseFloat(e.target.value) || 0)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Empréstimo Mãe</Label>
-              <Input
-                type="number"
-                value={motherLoan || ""}
-                onChange={(e) => setMotherLoan(Number.parseFloat(e.target.value) || 0)}
-              />
-            </div>
+          <div className="pt-3 border-t flex justify-between font-bold text-accent">
+            <span>Total Ativos</span>
+            <span>{formatCurrency(totalAssets)}</span>
           </div>
         </CardContent>
       </Card>
 
-      {/* Total Summary */}
-      <Card className="bg-primary/5 border-primary/20">
-        <CardContent className="p-6">
-          <div className="grid sm:grid-cols-2 gap-6 text-center">
-            <div>
-              <Label className="text-muted-foreground">Total Poupança</Label>
-              <p className="text-3xl font-bold text-primary">{formatCurrency(totalSavings)}</p>
+      {/* PASSIVOS */}
+      <Card>
+        <CardHeader className="flex justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingDown className="text-destructive" /> Dívidas
+          </CardTitle>
+
+          <Button size="sm" onClick={() => addItem("liability")}>
+            Adicionar
+          </Button>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          {liabilities.map((item) => (
+            <div key={item.id} className="flex gap-2">
+              <Input
+                value={item.name || ""}
+                placeholder="Descrição"
+                onChange={(e) =>
+                  updateItem(item.id, "name", e.target.value)
+                }
+              />
+
+              <Input
+                type="number"
+                value={item.amount || ""}
+                onChange={(e) =>
+                  updateItem(item.id, "amount", Number(e.target.value))
+                }
+                className="w-32"
+              />
+
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => removeItem(item.id)}
+              >
+                ✕
+              </Button>
             </div>
-            <div>
-              <Label className="text-muted-foreground">Total c/ Mãe</Label>
-              <p className="text-3xl font-bold text-accent">{formatCurrency(totalWithMother)}</p>
-            </div>
+          ))}
+
+          <div className="pt-3 border-t flex justify-between font-bold text-destructive">
+            <span>Total Dívidas</span>
+            <span>{formatCurrency(totalLiabilities)}</span>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* NET WORTH */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="p-6 text-center">
+          <Label>Património Líquido</Label>
+          <p className="text-3xl font-bold text-primary">
+            {formatCurrency(netWorth)}
+          </p>
         </CardContent>
       </Card>
     </div>
